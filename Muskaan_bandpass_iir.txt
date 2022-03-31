@@ -1,0 +1,87 @@
+m=48
+qm = floor(0.1*m-eps)
+rm = m-10*qm
+bl = (10+5*qm+13*rm)*1e3
+bh = bl+45*1e3
+samp_rate = 540e3
+tran_width = 3e3
+d_p1 = 2*pi*(bl/samp_rate)
+d_p2 = 2*pi*(bh/samp_rate)
+d_s1 = 2*pi*((bl-tran_width)/samp_rate)
+d_s2 = 2*pi*((bh+tran_width)/samp_rate)
+bp_p1 = tan(d_p1/2)
+bp_p2 = tan(d_p2/2)
+bp_s1 = tan(d_s1/2)
+bp_s2 = tan(d_s2/2)
+bandwidth = bp_p2-bp_p1
+center_freq = nthroot(bp_p2*bp_p1,2)
+lp_s1 = (bp_s1^2-center_freq^2)/(bandwidth*bp_s1)
+lp_s2 = (bp_s2^2-center_freq^2)/(bandwidth*bp_s2)
+lp_s = min(abs(lp_s1),abs(lp_s2))
+d1 = 1/(1-0.15)^2-1
+d2 = 1/(0.15)^2-1
+N = ceil(log(d2/d1)/(2*log(lp_s)))
+
+%% 
+
+hp_w_low = 1/(nthroot(d1,2*N))
+hp_w_high = lp_s/(nthroot(d2,2*N))
+hp_w = (hp_w_low + hp_w_high)/2
+%% 
+
+syms x
+equation = 1+(x/1i*hp_w)^(2*N)
+root_c = double(solve(equation))
+
+root_r = real(root_c)
+root_i = imag(root_c)
+root_lp = zeros([N 1]);
+j=1;
+for i=1:2*N
+    if real(root_c(i)) <=0
+        root_lp(j)=root_c(i);
+        j=j+1;
+    end
+end
+
+s = tf('s');
+z = tf('z');
+den_lowpass=1;
+den_bandpass=1;
+den_discrete=1;
+
+for i=1:N
+   den_lowpass = den_lowpass*(s-root_lp(i));
+   den_bandpass = den_bandpass*((s^2+center_freq^2)/(s*bandwidth)-root_lp(i));
+   den_discrete = den_discrete*((((z-1)^2+(center_freq*(z+1))^2)/((z^2-1)*bandwidth))-root_lp(i));
+end
+
+lowpass_filter_un = 1/den_lowpass
+bandpass_filter_un = 1/den_bandpass
+discrete_filter_un = 1/den_discrete
+
+lp_k = abs(evalfr(lowpass_filter_un,0))
+bp_k = abs(evalfr(bandpass_filter_un,1i*bp_p1))
+
+lowpass_filter_n = 1/lp_k * lowpass_filter_un
+bandpass_filter_n = 1/lp_k * bandpass_filter_un
+discrete_filter_n = 1/lp_k * discrete_filter_un
+
+[num_lowpass,den_lowpass] = tfdata(lowpass_filter_n,'v');
+% freqs(num_lowpass,den_lowpass)
+
+ [num_bandpass,den_bandpass] = tfdata(bandpass_filter_n,'v');
+% freqs(num_bandpass,den_bandpass);
+
+[num_discrete,den_discrete] = tfdata(discrete_filter_n,'v');
+%fvtool(num_discrete,den_discrete,Analysis='freq',Fs=samp_rate,FrequencyRange=[1 samp_rate/2]);
+
+%[b,a] = butter(N,[d_p1/pi d_p2/pi],'bandpass');
+%fvtool(b,a,Analysis='freq',Fs=samp_rate,FrequencyRange=[1 samp_rate/2])
+
+[num,den]  = tfdata(discrete_filter_n,'v');
+fvtool(num,den);
+
+%[H,f] = freqz(num_discrete,den_discrete,1024e2*1024e2, 100e3);
+%plot(f,abs(H))
+%grid
